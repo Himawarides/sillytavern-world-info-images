@@ -1,9 +1,9 @@
 {
-  "name": "World Info Images",
+  "name": "sillytavern-worldinfo-images",
   "version": "1.0.0",
-  "description": "Attach images to world info entries",
-  "author": "YourName",
+  "description": "SillyTavern extension for adding images to World Info entries",
   "main": "world-info-images.js",
-  "tags": ["world-info", "images", "ui"],
-  "sillytavern_version": "1.11.0+"
+  "keywords": ["sillytavern", "extension", "worldinfo", "images"],
+  "author": "Your Name",
+  "license": "MIT"
 }
