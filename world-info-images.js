@@ -2,92 +2,126 @@
  * World Info Image Extension for SillyTavern
  * Allows attaching images to world info entries
  * Author: Assistant
- * Version: 1.0.0
+ * Version: 1.1.0
  */
 
-(() => {
+(function() {
     'use strict';
 
     const extensionName = 'world-info-images';
     const extensionDisplayName = 'World Info Images';
     let extensionSettings = {};
-    let imageStorage = new Map(); // Store images in memory
+    let imageStorage = new Map();
+    let isInjected = false;
 
     // Default settings
     const defaultSettings = {
         maxImageSize: 5 * 1024 * 1024, // 5MB
         allowedTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
         imageQuality: 0.8,
-        maxImageWidth: 800,
-        maxImageHeight: 600
+        maxImageWidth: 400,
+        maxImageHeight: 300
     };
 
-    // CSS styles for the extension
+    // CSS styles
     const extensionCSS = `
-        .wi-image-container {
-            margin: 10px 0;
-            border: 1px solid var(--SmartThemeBodyColor);
-            border-radius: 5px;
+        .wi-image-section {
+            margin-top: 10px;
             padding: 10px;
-            background: var(--black70a);
+            border: 1px solid #444;
+            border-radius: 5px;
+            background-color: rgba(0,0,0,0.2);
         }
         
-        .wi-image-upload {
+        .wi-image-header {
             display: flex;
             align-items: center;
-            gap: 10px;
+            justify-content: space-between;
             margin-bottom: 10px;
         }
         
-        .wi-image-upload input[type="file"] {
-            flex: 1;
+        .wi-image-title {
+            font-weight: bold;
+            color: #fff;
+            font-size: 14px;
         }
         
-        .wi-image-preview {
-            max-width: 200px;
-            max-height: 200px;
-            border-radius: 5px;
-            cursor: pointer;
-            border: 1px solid var(--SmartThemeBodyColor);
-        }
-        
-        .wi-image-preview:hover {
-            opacity: 0.8;
-        }
-        
-        .wi-image-controls {
-            display: flex;
-            gap: 5px;
-            margin-top: 5px;
-        }
-        
-        .wi-image-btn {
+        .wi-upload-btn {
+            background: #4a4a4a;
+            color: #fff;
+            border: 1px solid #666;
             padding: 5px 10px;
-            border: 1px solid var(--SmartThemeBodyColor);
-            background: var(--black50a);
-            color: var(--SmartThemeBodyColor);
             border-radius: 3px;
             cursor: pointer;
             font-size: 12px;
         }
         
-        .wi-image-btn:hover {
-            background: var(--black70a);
+        .wi-upload-btn:hover {
+            background: #555;
         }
         
-        .wi-image-modal {
+        .wi-hidden-input {
+            display: none;
+        }
+        
+        .wi-image-gallery {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .wi-image-item {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .wi-image-thumb {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid #666;
+            cursor: pointer;
+        }
+        
+        .wi-image-thumb:hover {
+            opacity: 0.8;
+        }
+        
+        .wi-image-delete {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .wi-image-delete:hover {
+            background: #ff6666;
+        }
+        
+        .wi-modal {
             display: none;
             position: fixed;
-            z-index: 9999;
+            z-index: 10000;
             left: 0;
             top: 0;
             width: 100%;
             height: 100%;
             background-color: rgba(0,0,0,0.9);
-            cursor: pointer;
         }
         
-        .wi-image-modal img {
+        .wi-modal-content {
             margin: auto;
             display: block;
             max-width: 90%;
@@ -95,22 +129,32 @@
             margin-top: 5%;
         }
         
-        .wi-image-close {
+        .wi-modal-close {
             position: absolute;
-            top: 15px;
+            top: 20px;
             right: 35px;
-            color: #f1f1f1;
+            color: #fff;
             font-size: 40px;
             font-weight: bold;
             cursor: pointer;
         }
         
-        .wi-image-close:hover {
-            color: #bbb;
+        .wi-modal-close:hover {
+            color: #ccc;
+        }
+        
+        .wi-no-images {
+            color: #888;
+            font-style: italic;
+            font-size: 12px;
         }
     `;
 
     // Utility functions
+    function log(message) {
+        console.log(`[${extensionName}] ${message}`);
+    }
+
     function resizeImage(file, maxWidth, maxHeight, quality) {
         return new Promise((resolve) => {
             const canvas = document.createElement('canvas');
@@ -120,7 +164,6 @@
             img.onload = () => {
                 let { width, height } = img;
                 
-                // Calculate new dimensions
                 if (width > height) {
                     if (width > maxWidth) {
                         height = (height * maxWidth) / width;
@@ -135,7 +178,6 @@
                 
                 canvas.width = width;
                 canvas.height = height;
-                
                 ctx.drawImage(img, 0, 0, width, height);
                 canvas.toBlob(resolve, file.type, quality);
             };
@@ -145,61 +187,87 @@
     }
 
     function generateImageId() {
-        return 'wi_img_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        return 'img_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
 
-    function createImageContainer(wiEntry) {
-        const container = document.createElement('div');
-        container.className = 'wi-image-container';
+    function getEntryId(entryElement) {
+        // Try to find a unique identifier for the world info entry
+        const uidInput = entryElement.querySelector('input[name="uid"]');
+        if (uidInput) return uidInput.value;
         
-        // File input
-        const uploadDiv = document.createElement('div');
-        uploadDiv.className = 'wi-image-upload';
+        const keyInput = entryElement.querySelector('input[name="key"]');
+        if (keyInput) return keyInput.value;
+        
+        // Fallback to position in DOM
+        const entries = document.querySelectorAll('.world_entry');
+        return Array.from(entries).indexOf(entryElement).toString();
+    }
+
+    function createImageSection(entryElement) {
+        const entryId = getEntryId(entryElement);
+        
+        const section = document.createElement('div');
+        section.className = 'wi-image-section';
+        section.setAttribute('data-entry-id', entryId);
+        
+        const header = document.createElement('div');
+        header.className = 'wi-image-header';
+        
+        const title = document.createElement('div');
+        title.className = 'wi-image-title';
+        title.textContent = 'Images';
+        
+        const uploadBtn = document.createElement('button');
+        uploadBtn.className = 'wi-upload-btn';
+        uploadBtn.textContent = 'Upload Image';
         
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
+        fileInput.className = 'wi-hidden-input';
         fileInput.accept = extensionSettings.allowedTypes.join(',');
-        fileInput.addEventListener('change', (e) => handleImageUpload(e, wiEntry));
         
-        const uploadBtn = document.createElement('button');
-        uploadBtn.className = 'wi-image-btn';
-        uploadBtn.textContent = 'Upload Image';
         uploadBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => handleImageUpload(e, entryId, section));
         
-        uploadDiv.appendChild(fileInput);
-        uploadDiv.appendChild(uploadBtn);
+        header.appendChild(title);
+        header.appendChild(uploadBtn);
         
-        // Image display area
-        const imageDisplay = document.createElement('div');
-        imageDisplay.className = 'wi-image-display';
+        const gallery = document.createElement('div');
+        gallery.className = 'wi-image-gallery';
         
-        container.appendChild(uploadDiv);
-        container.appendChild(imageDisplay);
+        section.appendChild(header);
+        section.appendChild(fileInput);
+        section.appendChild(gallery);
         
-        // Load existing images
-        loadImagesForEntry(wiEntry, imageDisplay);
+        updateImageGallery(entryId, gallery);
         
-        return container;
+        return section;
     }
 
-    async function handleImageUpload(event, wiEntry) {
+    async function handleImageUpload(event, entryId, section) {
         const file = event.target.files[0];
         if (!file) return;
         
-        // Validate file type
+        // Validate file
         if (!extensionSettings.allowedTypes.includes(file.type)) {
-            toastr.error('Invalid file type. Please upload a valid image.');
+            if (typeof toastr !== 'undefined') {
+                toastr.error('Invalid file type. Please upload an image.');
+            } else {
+                alert('Invalid file type. Please upload an image.');
+            }
             return;
         }
         
-        // Validate file size
         if (file.size > extensionSettings.maxImageSize) {
-            toastr.error('File too large. Maximum size is 5MB.');
+            if (typeof toastr !== 'undefined') {
+                toastr.error('File too large. Maximum size is 5MB.');
+            } else {
+                alert('File too large. Maximum size is 5MB.');
+            }
             return;
         }
         
         try {
-            // Resize image
             const resizedFile = await resizeImage(
                 file,
                 extensionSettings.maxImageWidth,
@@ -207,117 +275,106 @@
                 extensionSettings.imageQuality
             );
             
-            // Convert to base64
             const reader = new FileReader();
             reader.onload = (e) => {
-                const imageId = generateImageId();
                 const imageData = {
-                    id: imageId,
+                    id: generateImageId(),
                     data: e.target.result,
                     filename: file.name,
-                    type: file.type
+                    type: file.type,
+                    timestamp: Date.now()
                 };
                 
-                // Store image
-                const entryKey = getEntryKey(wiEntry);
-                if (!imageStorage.has(entryKey)) {
-                    imageStorage.set(entryKey, []);
+                if (!imageStorage.has(entryId)) {
+                    imageStorage.set(entryId, []);
                 }
-                imageStorage.get(entryKey).push(imageData);
+                imageStorage.get(entryId).push(imageData);
                 
-                // Refresh display
-                const imageDisplay = event.target.closest('.wi-image-container').querySelector('.wi-image-display');
-                loadImagesForEntry(wiEntry, imageDisplay);
+                const gallery = section.querySelector('.wi-image-gallery');
+                updateImageGallery(entryId, gallery);
                 
-                toastr.success('Image uploaded successfully!');
+                if (typeof toastr !== 'undefined') {
+                    toastr.success('Image uploaded successfully!');
+                }
             };
             
             reader.readAsDataURL(resizedFile);
         } catch (error) {
-            console.error('Error processing image:', error);
-            toastr.error('Error processing image.');
+            log('Error processing image: ' + error);
+            if (typeof toastr !== 'undefined') {
+                toastr.error('Error processing image.');
+            }
         }
         
-        // Clear file input
         event.target.value = '';
     }
 
-    function getEntryKey(wiEntry) {
-        // Create a unique key for the world info entry
-        const uid = wiEntry.uid || wiEntry.id || '';
-        const key = wiEntry.key || wiEntry.keys?.[0] || '';
-        return `${uid}_${key}`;
-    }
-
-    function loadImagesForEntry(wiEntry, container) {
-        const entryKey = getEntryKey(wiEntry);
-        const images = imageStorage.get(entryKey) || [];
+    function updateImageGallery(entryId, gallery) {
+        const images = imageStorage.get(entryId) || [];
+        gallery.innerHTML = '';
         
-        container.innerHTML = '';
+        if (images.length === 0) {
+            const noImages = document.createElement('div');
+            noImages.className = 'wi-no-images';
+            noImages.textContent = 'No images uploaded';
+            gallery.appendChild(noImages);
+            return;
+        }
         
         images.forEach((imageData, index) => {
-            const imageWrapper = document.createElement('div');
-            imageWrapper.style.marginBottom = '10px';
+            const item = document.createElement('div');
+            item.className = 'wi-image-item';
             
             const img = document.createElement('img');
             img.src = imageData.data;
-            img.className = 'wi-image-preview';
+            img.className = 'wi-image-thumb';
             img.title = imageData.filename;
             img.addEventListener('click', () => showImageModal(imageData.data));
             
-            const controls = document.createElement('div');
-            controls.className = 'wi-image-controls';
-            
             const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'wi-image-btn';
-            deleteBtn.textContent = 'Delete';
-            deleteBtn.addEventListener('click', () => {
+            deleteBtn.className = 'wi-image-delete';
+            deleteBtn.innerHTML = '×';
+            deleteBtn.title = 'Delete image';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 images.splice(index, 1);
                 if (images.length === 0) {
-                    imageStorage.delete(entryKey);
+                    imageStorage.delete(entryId);
                 }
-                loadImagesForEntry(wiEntry, container);
+                updateImageGallery(entryId, gallery);
             });
             
-            const downloadBtn = document.createElement('button');
-            downloadBtn.className = 'wi-image-btn';
-            downloadBtn.textContent = 'Download';
-            downloadBtn.addEventListener('click', () => {
-                const link = document.createElement('a');
-                link.href = imageData.data;
-                link.download = imageData.filename;
-                link.click();
-            });
-            
-            controls.appendChild(deleteBtn);
-            controls.appendChild(downloadBtn);
-            
-            imageWrapper.appendChild(img);
-            imageWrapper.appendChild(controls);
-            container.appendChild(imageWrapper);
+            item.appendChild(img);
+            item.appendChild(deleteBtn);
+            gallery.appendChild(item);
         });
     }
 
     function showImageModal(imageSrc) {
         const modal = document.getElementById('wi-image-modal');
-        const modalImg = modal.querySelector('img');
+        if (!modal) return;
+        
+        const modalImg = modal.querySelector('.wi-modal-content');
         modalImg.src = imageSrc;
         modal.style.display = 'block';
     }
 
     function createImageModal() {
+        if (document.getElementById('wi-image-modal')) return;
+        
         const modal = document.createElement('div');
         modal.id = 'wi-image-modal';
-        modal.className = 'wi-image-modal';
+        modal.className = 'wi-modal';
         
         const closeBtn = document.createElement('span');
-        closeBtn.className = 'wi-image-close';
-        closeBtn.innerHTML = '&times;';
+        closeBtn.className = 'wi-modal-close';
+        closeBtn.innerHTML = '×';
         closeBtn.addEventListener('click', () => {
             modal.style.display = 'none';
         });
         
         const img = document.createElement('img');
+        img.className = 'wi-modal-content';
         
         modal.appendChild(closeBtn);
         modal.appendChild(img);
@@ -331,87 +388,68 @@
         document.body.appendChild(modal);
     }
 
-    function injectImageContainers() {
-        // Find all world info entries
-        const wiEntries = document.querySelectorAll('.world_entry');
+    function injectImageSections() {
+        const entries = document.querySelectorAll('.world_entry');
         
-        wiEntries.forEach(entryElement => {
-            // Skip if already has image container
-            if (entryElement.querySelector('.wi-image-container')) {
-                return;
+        entries.forEach(entry => {
+            // Skip if already has image section
+            if (entry.querySelector('.wi-image-section')) return;
+            
+            // Try to find the best insertion point
+            let insertPoint = null;
+            
+            // Look for common world info elements
+            const content = entry.querySelector('.world_entry_form_content, .world_entry_content, textarea');
+            if (content) {
+                insertPoint = content.parentElement;
             }
             
-            // Get the world info entry data
-            const entryIndex = Array.from(entryElement.parentElement.children).indexOf(entryElement);
-            const wiEntry = world_info?.entries?.[entryIndex];
-            
-            if (!wiEntry) return;
-            
-            // Create and inject image container
-            const imageContainer = createImageContainer(wiEntry);
-            
-            // Find the best place to insert (after the content textarea)
-            const contentTextarea = entryElement.querySelector('.world_entry_form textarea');
-            if (contentTextarea) {
-                const parent = contentTextarea.parentElement;
-                parent.insertBefore(imageContainer, contentTextarea.nextSibling);
+            // Fallback to the entry itself
+            if (!insertPoint) {
+                insertPoint = entry;
             }
+            
+            const imageSection = createImageSection(entry);
+            insertPoint.appendChild(imageSection);
         });
     }
 
-    // Settings panel
-    function createSettingsPanel() {
-        const panel = document.createElement('div');
-        panel.innerHTML = `
-            <h3>World Info Images Settings</h3>
-            <div class="range-block">
-                <label>Max Image Size (MB):</label>
-                <input type="number" id="wi-max-size" min="1" max="10" value="${extensionSettings.maxImageSize / (1024 * 1024)}" step="0.5">
-            </div>
-            <div class="range-block">
-                <label>Max Image Width:</label>
-                <input type="number" id="wi-max-width" min="100" max="2000" value="${extensionSettings.maxImageWidth}" step="50">
-            </div>
-            <div class="range-block">
-                <label>Max Image Height:</label>
-                <input type="number" id="wi-max-height" min="100" max="2000" value="${extensionSettings.maxImageHeight}" step="50">
-            </div>
-            <div class="range-block">
-                <label>Image Quality (0.1-1.0):</label>
-                <input type="number" id="wi-quality" min="0.1" max="1.0" value="${extensionSettings.imageQuality}" step="0.1">
-            </div>
-        `;
-        
-        // Add event listeners for settings
-        panel.querySelector('#wi-max-size').addEventListener('change', (e) => {
-            extensionSettings.maxImageSize = parseFloat(e.target.value) * 1024 * 1024;
-            saveSettings();
+    function observeForWorldInfo() {
+        const observer = new MutationObserver((mutations) => {
+            let shouldInject = false;
+            
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.nodeType === 1) { // Element node
+                            if (node.classList?.contains('world_entry') || 
+                                node.querySelector?.('.world_entry')) {
+                                shouldInject = true;
+                            }
+                        }
+                    });
+                }
+            });
+            
+            if (shouldInject) {
+                setTimeout(injectImageSections, 100);
+            }
         });
         
-        panel.querySelector('#wi-max-width').addEventListener('change', (e) => {
-            extensionSettings.maxImageWidth = parseInt(e.target.value);
-            saveSettings();
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
         });
         
-        panel.querySelector('#wi-max-height').addEventListener('change', (e) => {
-            extensionSettings.maxImageHeight = parseInt(e.target.value);
-            saveSettings();
-        });
-        
-        panel.querySelector('#wi-quality').addEventListener('change', (e) => {
-            extensionSettings.imageQuality = parseFloat(e.target.value);
-            saveSettings();
-        });
-        
-        return panel;
+        return observer;
     }
 
     function loadSettings() {
         const saved = localStorage.getItem(`${extensionName}_settings`);
         if (saved) {
-            extensionSettings = Object.assign({}, defaultSettings, JSON.parse(saved));
+            extensionSettings = { ...defaultSettings, ...JSON.parse(saved) };
         } else {
-            extensionSettings = Object.assign({}, defaultSettings);
+            extensionSettings = { ...defaultSettings };
         }
     }
 
@@ -419,9 +457,15 @@
         localStorage.setItem(`${extensionName}_settings`, JSON.stringify(extensionSettings));
     }
 
-    // Initialize extension
+    function getSettings() {
+        return extensionSettings;
+    }
+
     function init() {
-        // Load settings
+        if (isInjected) return;
+        
+        log('Initializing extension...');
+        
         loadSettings();
         
         // Add CSS
@@ -429,39 +473,58 @@
         style.textContent = extensionCSS;
         document.head.appendChild(style);
         
-        // Create image modal
+        // Create modal
         createImageModal();
         
-        // Inject containers when world info panel is opened
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                if (mutation.type === 'childList') {
-                    // Check if world info entries were added
-                    const addedNodes = Array.from(mutation.addedNodes);
-                    if (addedNodes.some(node => node.classList?.contains('world_entry'))) {
-                        setTimeout(injectImageContainers, 100);
-                    }
-                }
-            });
-        });
-        
         // Start observing
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        observeForWorldInfo();
         
         // Initial injection
-        setTimeout(injectImageContainers, 1000);
+        setTimeout(() => {
+            injectImageSections();
+        }, 2000);
         
-        console.log('World Info Images extension loaded');
+        isInjected = true;
+        log('Extension initialized successfully');
     }
 
-    // Extension registration
-    if (typeof window.registerExtension === 'function') {
-        window.registerExtension(extensionName, extensionDisplayName, init, createSettingsPanel);
+    // SillyTavern extension registration
+    const manifest = {
+        name: extensionDisplayName,
+        version: '1.1.0',
+        description: 'Attach images to world info entries',
+        author: 'Assistant',
+        init: init,
+        getSettings: getSettings
+    };
+
+    // Try different registration methods
+    if (typeof jQuery !== 'undefined') {
+        jQuery(document).ready(function() {
+            if (typeof window.registerExtension === 'function') {
+                window.registerExtension(extensionName, manifest);
+            } else {
+                init();
+            }
+        });
+    } else if (typeof window.registerExtension === 'function') {
+        window.registerExtension(extensionName, manifest);
     } else {
-        // Fallback initialization
-        document.addEventListener('DOMContentLoaded', init);
+        // Fallback
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
     }
+
+    // Global access for debugging
+    window.worldInfoImages = {
+        init: init,
+        inject: injectImageSections,
+        storage: imageStorage,
+        settings: extensionSettings
+    };
+
+    log('Extension loaded');
 })();
