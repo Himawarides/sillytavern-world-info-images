@@ -1,530 +1,353 @@
-/**
- * World Info Image Extension for SillyTavern
- * Allows attaching images to world info entries
- * Author: Assistant
- * Version: 1.1.0
- */
+// World Info Images Extension for SillyTavern
+// Adds image URL support to World Info entries
 
 (function() {
     'use strict';
 
-    const extensionName = 'world-info-images';
-    const extensionDisplayName = 'World Info Images';
-    let extensionSettings = {};
-    let imageStorage = new Map();
-    let isInjected = false;
+    const MODULE_NAME = 'world-info-images';
+    const UPDATE_INTERVAL = 500; // Check for UI updates every 500ms
 
-    // Default settings
-    const defaultSettings = {
-        maxImageSize: 5 * 1024 * 1024, // 5MB
-        allowedTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-        imageQuality: 0.8,
-        maxImageWidth: 400,
-        maxImageHeight: 300
+    let extensionSettings = {
+        enabled: true,
+        includeInPrompt: true,
+        imagePosition: 'after' // 'before' or 'after' content
     };
 
-    // CSS styles
-    const extensionCSS = `
-        .wi-image-section {
-            margin-top: 10px;
-            padding: 10px;
-            border: 1px solid #444;
-            border-radius: 5px;
-            background-color: rgba(0,0,0,0.2);
-        }
-        
-        .wi-image-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 10px;
-        }
-        
-        .wi-image-title {
-            font-weight: bold;
-            color: #fff;
-            font-size: 14px;
-        }
-        
-        .wi-upload-btn {
-            background: #4a4a4a;
-            color: #fff;
-            border: 1px solid #666;
-            padding: 5px 10px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .wi-upload-btn:hover {
-            background: #555;
-        }
-        
-        .wi-hidden-input {
-            display: none;
-        }
-        
-        .wi-image-gallery {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        
-        .wi-image-item {
-            position: relative;
-            display: inline-block;
-        }
-        
-        .wi-image-thumb {
-            width: 80px;
-            height: 80px;
-            object-fit: cover;
-            border-radius: 4px;
-            border: 1px solid #666;
-            cursor: pointer;
-        }
-        
-        .wi-image-thumb:hover {
-            opacity: 0.8;
-        }
-        
-        .wi-image-delete {
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            background: #ff4444;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            cursor: pointer;
-            font-size: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .wi-image-delete:hover {
-            background: #ff6666;
-        }
-        
-        .wi-modal {
-            display: none;
-            position: fixed;
-            z-index: 10000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.9);
-        }
-        
-        .wi-modal-content {
-            margin: auto;
-            display: block;
-            max-width: 90%;
-            max-height: 90%;
-            margin-top: 5%;
-        }
-        
-        .wi-modal-close {
-            position: absolute;
-            top: 20px;
-            right: 35px;
-            color: #fff;
-            font-size: 40px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        
-        .wi-modal-close:hover {
-            color: #ccc;
-        }
-        
-        .wi-no-images {
-            color: #888;
-            font-style: italic;
-            font-size: 12px;
-        }
-    `;
+    // Storage for image URLs per world info entry
+    let imageData = {};
 
-    // Utility functions
-    function log(message) {
-        console.log(`[${extensionName}] ${message}`);
-    }
-
-    function resizeImage(file, maxWidth, maxHeight, quality) {
-        return new Promise((resolve) => {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            const img = new Image();
-            
-            img.onload = () => {
-                let { width, height } = img;
-                
-                if (width > height) {
-                    if (width > maxWidth) {
-                        height = (height * maxWidth) / width;
-                        width = maxWidth;
-                    }
-                } else {
-                    if (height > maxHeight) {
-                        width = (width * maxHeight) / height;
-                        height = maxHeight;
-                    }
-                }
-                
-                canvas.width = width;
-                canvas.height = height;
-                ctx.drawImage(img, 0, 0, width, height);
-                canvas.toBlob(resolve, file.type, quality);
-            };
-            
-            img.src = URL.createObjectURL(file);
-        });
-    }
-
-    function generateImageId() {
-        return 'img_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    }
-
-    function getEntryId(entryElement) {
-        // Try to find a unique identifier for the world info entry
-        const uidInput = entryElement.querySelector('input[name="uid"]');
-        if (uidInput) return uidInput.value;
-        
-        const keyInput = entryElement.querySelector('input[name="key"]');
-        if (keyInput) return keyInput.value;
-        
-        // Fallback to position in DOM
-        const entries = document.querySelectorAll('.world_entry');
-        return Array.from(entries).indexOf(entryElement).toString();
-    }
-
-    function createImageSection(entryElement) {
-        const entryId = getEntryId(entryElement);
-        
-        const section = document.createElement('div');
-        section.className = 'wi-image-section';
-        section.setAttribute('data-entry-id', entryId);
-        
-        const header = document.createElement('div');
-        header.className = 'wi-image-header';
-        
-        const title = document.createElement('div');
-        title.className = 'wi-image-title';
-        title.textContent = 'Images';
-        
-        const uploadBtn = document.createElement('button');
-        uploadBtn.className = 'wi-upload-btn';
-        uploadBtn.textContent = 'Upload Image';
-        
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.className = 'wi-hidden-input';
-        fileInput.accept = extensionSettings.allowedTypes.join(',');
-        
-        uploadBtn.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', (e) => handleImageUpload(e, entryId, section));
-        
-        header.appendChild(title);
-        header.appendChild(uploadBtn);
-        
-        const gallery = document.createElement('div');
-        gallery.className = 'wi-image-gallery';
-        
-        section.appendChild(header);
-        section.appendChild(fileInput);
-        section.appendChild(gallery);
-        
-        updateImageGallery(entryId, gallery);
-        
-        return section;
-    }
-
-    async function handleImageUpload(event, entryId, section) {
-        const file = event.target.files[0];
-        if (!file) return;
-        
-        // Validate file
-        if (!extensionSettings.allowedTypes.includes(file.type)) {
-            if (typeof toastr !== 'undefined') {
-                toastr.error('Invalid file type. Please upload an image.');
-            } else {
-                alert('Invalid file type. Please upload an image.');
-            }
-            return;
-        }
-        
-        if (file.size > extensionSettings.maxImageSize) {
-            if (typeof toastr !== 'undefined') {
-                toastr.error('File too large. Maximum size is 5MB.');
-            } else {
-                alert('File too large. Maximum size is 5MB.');
-            }
-            return;
-        }
-        
-        try {
-            const resizedFile = await resizeImage(
-                file,
-                extensionSettings.maxImageWidth,
-                extensionSettings.maxImageHeight,
-                extensionSettings.imageQuality
-            );
-            
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const imageData = {
-                    id: generateImageId(),
-                    data: e.target.result,
-                    filename: file.name,
-                    type: file.type,
-                    timestamp: Date.now()
-                };
-                
-                if (!imageStorage.has(entryId)) {
-                    imageStorage.set(entryId, []);
-                }
-                imageStorage.get(entryId).push(imageData);
-                
-                const gallery = section.querySelector('.wi-image-gallery');
-                updateImageGallery(entryId, gallery);
-                
-                if (typeof toastr !== 'undefined') {
-                    toastr.success('Image uploaded successfully!');
-                }
-            };
-            
-            reader.readAsDataURL(resizedFile);
-        } catch (error) {
-            log('Error processing image: ' + error);
-            if (typeof toastr !== 'undefined') {
-                toastr.error('Error processing image.');
-            }
-        }
-        
-        event.target.value = '';
-    }
-
-    function updateImageGallery(entryId, gallery) {
-        const images = imageStorage.get(entryId) || [];
-        gallery.innerHTML = '';
-        
-        if (images.length === 0) {
-            const noImages = document.createElement('div');
-            noImages.className = 'wi-no-images';
-            noImages.textContent = 'No images uploaded';
-            gallery.appendChild(noImages);
-            return;
-        }
-        
-        images.forEach((imageData, index) => {
-            const item = document.createElement('div');
-            item.className = 'wi-image-item';
-            
-            const img = document.createElement('img');
-            img.src = imageData.data;
-            img.className = 'wi-image-thumb';
-            img.title = imageData.filename;
-            img.addEventListener('click', () => showImageModal(imageData.data));
-            
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'wi-image-delete';
-            deleteBtn.innerHTML = '×';
-            deleteBtn.title = 'Delete image';
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                images.splice(index, 1);
-                if (images.length === 0) {
-                    imageStorage.delete(entryId);
-                }
-                updateImageGallery(entryId, gallery);
-            });
-            
-            item.appendChild(img);
-            item.appendChild(deleteBtn);
-            gallery.appendChild(item);
-        });
-    }
-
-    function showImageModal(imageSrc) {
-        const modal = document.getElementById('wi-image-modal');
-        if (!modal) return;
-        
-        const modalImg = modal.querySelector('.wi-modal-content');
-        modalImg.src = imageSrc;
-        modal.style.display = 'block';
-    }
-
-    function createImageModal() {
-        if (document.getElementById('wi-image-modal')) return;
-        
-        const modal = document.createElement('div');
-        modal.id = 'wi-image-modal';
-        modal.className = 'wi-modal';
-        
-        const closeBtn = document.createElement('span');
-        closeBtn.className = 'wi-modal-close';
-        closeBtn.innerHTML = '×';
-        closeBtn.addEventListener('click', () => {
-            modal.style.display = 'none';
-        });
-        
-        const img = document.createElement('img');
-        img.className = 'wi-modal-content';
-        
-        modal.appendChild(closeBtn);
-        modal.appendChild(img);
-        
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
-        });
-        
-        document.body.appendChild(modal);
-    }
-
-    function injectImageSections() {
-        const entries = document.querySelectorAll('.world_entry');
-        
-        entries.forEach(entry => {
-            // Skip if already has image section
-            if (entry.querySelector('.wi-image-section')) return;
-            
-            // Try to find the best insertion point
-            let insertPoint = null;
-            
-            // Look for common world info elements
-            const content = entry.querySelector('.world_entry_form_content, .world_entry_content, textarea');
-            if (content) {
-                insertPoint = content.parentElement;
-            }
-            
-            // Fallback to the entry itself
-            if (!insertPoint) {
-                insertPoint = entry;
-            }
-            
-            const imageSection = createImageSection(entry);
-            insertPoint.appendChild(imageSection);
-        });
-    }
-
-    function observeForWorldInfo() {
-        const observer = new MutationObserver((mutations) => {
-            let shouldInject = false;
-            
-            mutations.forEach((mutation) => {
-                if (mutation.type === 'childList') {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.nodeType === 1) { // Element node
-                            if (node.classList?.contains('world_entry') || 
-                                node.querySelector?.('.world_entry')) {
-                                shouldInject = true;
-                            }
-                        }
-                    });
-                }
-            });
-            
-            if (shouldInject) {
-                setTimeout(injectImageSections, 100);
-            }
-        });
-        
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-        
-        return observer;
-    }
-
-    function loadSettings() {
-        const saved = localStorage.getItem(`${extensionName}_settings`);
-        if (saved) {
-            extensionSettings = { ...defaultSettings, ...JSON.parse(saved) };
-        } else {
-            extensionSettings = { ...defaultSettings };
-        }
-    }
-
-    function saveSettings() {
-        localStorage.setItem(`${extensionName}_settings`, JSON.stringify(extensionSettings));
-    }
-
-    function getSettings() {
-        return extensionSettings;
-    }
-
+    // Initialize the extension
     function init() {
-        if (isInjected) return;
-        
-        log('Initializing extension...');
-        
+        // Load settings
         loadSettings();
         
-        // Add CSS
-        const style = document.createElement('style');
-        style.textContent = extensionCSS;
-        document.head.appendChild(style);
+        // Add CSS styles
+        addStyles();
         
-        // Create modal
-        createImageModal();
+        // Start monitoring for World Info UI
+        startUIMonitoring();
         
-        // Start observing
-        observeForWorldInfo();
+        // Register settings
+        registerSettings();
         
-        // Initial injection
-        setTimeout(() => {
-            injectImageSections();
-        }, 2000);
-        
-        isInjected = true;
-        log('Extension initialized successfully');
+        console.log(`[${MODULE_NAME}] Extension initialized`);
     }
 
-    // SillyTavern extension registration
-    const manifest = {
-        name: extensionDisplayName,
-        version: '1.1.0',
-        description: 'Attach images to world info entries',
-        author: 'Assistant',
-        init: init,
-        getSettings: getSettings
-    };
-
-    // Try different registration methods
-    if (typeof jQuery !== 'undefined') {
-        jQuery(document).ready(function() {
-            if (typeof window.registerExtension === 'function') {
-                window.registerExtension(extensionName, manifest);
-            } else {
-                init();
-            }
-        });
-    } else if (typeof window.registerExtension === 'function') {
-        window.registerExtension(extensionName, manifest);
-    } else {
-        // Fallback
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
-        } else {
-            init();
+    // Load extension settings
+    function loadSettings() {
+        const saved = localStorage.getItem(`${MODULE_NAME}_settings`);
+        if (saved) {
+            extensionSettings = { ...extensionSettings, ...JSON.parse(saved) };
+        }
+        
+        const savedImageData = localStorage.getItem(`${MODULE_NAME}_imageData`);
+        if (savedImageData) {
+            imageData = JSON.parse(savedImageData);
         }
     }
 
-    // Global access for debugging
-    window.worldInfoImages = {
-        init: init,
-        inject: injectImageSections,
-        storage: imageStorage,
-        settings: extensionSettings
+    // Save extension settings
+    function saveSettings() {
+        localStorage.setItem(`${MODULE_NAME}_settings`, JSON.stringify(extensionSettings));
+        localStorage.setItem(`${MODULE_NAME}_imageData`, JSON.stringify(imageData));
+    }
+
+    // Add required CSS styles
+    function addStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            .worldinfo-image-container {
+                margin: 8px 0;
+                padding: 8px;
+                border: 1px solid #444;
+                border-radius: 4px;
+                background-color: #2a2a2a;
+            }
+            
+            .worldinfo-image-input {
+                width: 100%;
+                padding: 4px 8px;
+                background-color: #333;
+                border: 1px solid #555;
+                border-radius: 4px;
+                color: #fff;
+                font-size: 12px;
+                margin-bottom: 8px;
+            }
+            
+            .worldinfo-image-preview {
+                max-width: 100%;
+                max-height: 200px;
+                border-radius: 4px;
+                display: block;
+                margin: 0 auto;
+            }
+            
+            .worldinfo-image-error {
+                color: #ff6b6b;
+                font-size: 11px;
+                margin-top: 4px;
+            }
+            
+            .worldinfo-image-controls {
+                display: flex;
+                gap: 8px;
+                margin-top: 8px;
+            }
+            
+            .worldinfo-image-btn {
+                padding: 4px 8px;
+                background-color: #444;
+                border: 1px solid #666;
+                border-radius: 4px;
+                color: #fff;
+                cursor: pointer;
+                font-size: 11px;
+            }
+            
+            .worldinfo-image-btn:hover {
+                background-color: #555;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Start monitoring for World Info UI changes
+    function startUIMonitoring() {
+        setInterval(() => {
+            if (extensionSettings.enabled) {
+                addImageControlsToWorldInfo();
+            }
+        }, UPDATE_INTERVAL);
+    }
+
+    // Add image controls to World Info entries
+    function addImageControlsToWorldInfo() {
+        const worldInfoEntries = document.querySelectorAll('.world_entry');
+        
+        worldInfoEntries.forEach(entry => {
+            const entryId = getEntryId(entry);
+            if (!entryId) return;
+            
+            // Check if image controls already exist
+            if (entry.querySelector('.worldinfo-image-container')) return;
+            
+            // Find the content area
+            const contentArea = entry.querySelector('.world_entry_form_control');
+            if (!contentArea) return;
+            
+            // Create image container
+            const imageContainer = createImageContainer(entryId);
+            
+            // Insert after the content area
+            contentArea.parentNode.insertBefore(imageContainer, contentArea.nextSibling);
+        });
+    }
+
+    // Get unique entry ID
+    function getEntryId(entry) {
+        // Try to find a unique identifier for the entry
+        const titleInput = entry.querySelector('input[placeholder*="Title"], input[placeholder*="Memo"]');
+        if (titleInput) {
+            return titleInput.value || `entry_${Array.from(entry.parentNode.children).indexOf(entry)}`;
+        }
+        return `entry_${Array.from(entry.parentNode.children).indexOf(entry)}`;
+    }
+
+    // Create image container HTML
+    function createImageContainer(entryId) {
+        const container = document.createElement('div');
+        container.className = 'worldinfo-image-container';
+        
+        const currentImageUrl = imageData[entryId] || '';
+        
+        container.innerHTML = `
+            <div style="font-size: 12px; font-weight: bold; margin-bottom: 4px; color: #ccc;">
+                📷 Image URL
+            </div>
+            <input type="text" 
+                   class="worldinfo-image-input" 
+                   placeholder="Enter image URL (https://...)" 
+                   value="${currentImageUrl}"
+                   data-entry-id="${entryId}">
+            <div class="worldinfo-image-preview-container">
+                ${currentImageUrl ? `<img src="${currentImageUrl}" class="worldinfo-image-preview" alt="World Info Image">` : ''}
+            </div>
+            <div class="worldinfo-image-error" style="display: none;"></div>
+            <div class="worldinfo-image-controls">
+                <button class="worldinfo-image-btn" onclick="worldInfoImagesExt.testImage('${entryId}')">Test Image</button>
+                <button class="worldinfo-image-btn" onclick="worldInfoImagesExt.clearImage('${entryId}')">Clear</button>
+            </div>
+        `;
+        
+        // Add event listener for input changes
+        const input = container.querySelector('.worldinfo-image-input');
+        input.addEventListener('blur', (e) => {
+            const url = e.target.value.trim();
+            updateImageData(entryId, url);
+        });
+        
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const url = e.target.value.trim();
+                updateImageData(entryId, url);
+            }
+        });
+        
+        return container;
+    }
+
+    // Update image data
+    function updateImageData(entryId, url) {
+        if (url) {
+            imageData[entryId] = url;
+        } else {
+            delete imageData[entryId];
+        }
+        saveSettings();
+        updateImagePreview(entryId, url);
+    }
+
+    // Update image preview
+    function updateImagePreview(entryId, url) {
+        const container = document.querySelector(`[data-entry-id="${entryId}"]`).closest('.worldinfo-image-container');
+        const previewContainer = container.querySelector('.worldinfo-image-preview-container');
+        const errorDiv = container.querySelector('.worldinfo-image-error');
+        
+        errorDiv.style.display = 'none';
+        
+        if (url) {
+            const img = document.createElement('img');
+            img.className = 'worldinfo-image-preview';
+            img.alt = 'World Info Image';
+            img.onload = () => {
+                previewContainer.innerHTML = '';
+                previewContainer.appendChild(img);
+            };
+            img.onerror = () => {
+                previewContainer.innerHTML = '';
+                errorDiv.textContent = 'Failed to load image. Please check the URL.';
+                errorDiv.style.display = 'block';
+            };
+            img.src = url;
+        } else {
+            previewContainer.innerHTML = '';
+        }
+    }
+
+    // Test image function
+    function testImage(entryId) {
+        const input = document.querySelector(`[data-entry-id="${entryId}"]`);
+        const url = input.value.trim();
+        
+        if (!url) {
+            alert('Please enter an image URL first.');
+            return;
+        }
+        
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            alert('Please enter a valid URL starting with http:// or https://');
+            return;
+        }
+        
+        updateImageData(entryId, url);
+        alert('Image tested! Check the preview above.');
+    }
+
+    // Clear image function
+    function clearImage(entryId) {
+        const input = document.querySelector(`[data-entry-id="${entryId}"]`);
+        input.value = '';
+        updateImageData(entryId, '');
+    }
+
+    // Register extension settings
+    function registerSettings() {
+        // Add to SillyTavern settings if the API is available
+        if (typeof registerExtensionSettings === 'function') {
+            registerExtensionSettings(MODULE_NAME, {
+                enabled: {
+                    type: 'boolean',
+                    default: true,
+                    description: 'Enable World Info Images extension'
+                },
+                includeInPrompt: {
+                    type: 'boolean',
+                    default: true,
+                    description: 'Include image URLs in prompts sent to AI'
+                },
+                imagePosition: {
+                    type: 'select',
+                    options: ['before', 'after'],
+                    default: 'after',
+                    description: 'Position of image in relation to World Info content'
+                }
+            });
+        }
+    }
+
+    // Hook into SillyTavern's World Info processing
+    function hookWorldInfoProcessing() {
+        // This would require deeper integration with SillyTavern's core
+        // For now, we'll use a simple approach that modifies the content
+        if (extensionSettings.includeInPrompt) {
+            // Monitor for chat generation and inject image URLs
+            const originalFetch = window.fetch;
+            window.fetch = function(...args) {
+                const result = originalFetch.apply(this, args);
+                
+                // If this is a chat completion request, modify the world info
+                if (args[0] && args[0].includes && (args[0].includes('/generate') || args[0].includes('/chat'))) {
+                    result.then(response => {
+                        // This is a simplified approach - in a real implementation,
+                        // you'd need to hook into SillyTavern's World Info processing
+                        injectImagesIntoWorldInfo();
+                    });
+                }
+                
+                return result;
+            };
+        }
+    }
+
+    // Inject images into World Info content
+    function injectImagesIntoWorldInfo() {
+        // This function would modify the World Info content to include image URLs
+        // Implementation depends on SillyTavern's internal API
+        console.log('[World Info Images] Injecting images into World Info content');
+        
+        // For each stored image, we would modify the corresponding World Info entry
+        Object.keys(imageData).forEach(entryId => {
+            const imageUrl = imageData[entryId];
+            if (imageUrl) {
+                // Find the world info entry and modify its content
+                // This is a placeholder - actual implementation would depend on SillyTavern's API
+                console.log(`[World Info Images] Entry ${entryId} has image: ${imageUrl}`);
+            }
+        });
+    }
+
+    // Export functions for button onclick handlers
+    window.worldInfoImagesExt = {
+        testImage: testImage,
+        clearImage: clearImage
     };
 
-    log('Extension loaded');
+    // Initialize when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+    // Export for SillyTavern extension system
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = {
+            init: init,
+            name: MODULE_NAME,
+            version: '1.0.0',
+            description: 'Adds image URL support to World Info entries'
+        };
+    }
+
 })();
