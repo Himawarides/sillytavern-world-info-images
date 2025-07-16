@@ -1,6 +1,6 @@
-import { saveSettingsDebounced } from "../../../../script.js"; // Fixed import path
+import { saveSettingsDebounced } from "../../../../../script.js"; // Fixed path (up 5 levels)
 import { extension_settings, getContext } from "../../extensions.js";
-import { eventSource, event_types } from "../../../../script.js"; // Fixed import path
+import { eventSource, event_types } from "../../../../../script.js"; // Fixed path
 
 // Extension info
 const extensionName = 'world-info-images';
@@ -15,7 +15,11 @@ const defaultSettings = {
 // Load settings
 function loadSettings() {
     extension_settings[extensionName] = extension_settings[extensionName] || {};
-    Object.assign(extension_settings[extensionName], { ...defaultSettings, ...extension_settings[extensionName] });
+    Object.assign(extension_settings[extensionName], { 
+        ...defaultSettings, 
+        ...extension_settings[extensionName],
+        imageData: extension_settings[extensionName].imageData || {}
+    });
 }
 
 // Add CSS styles
@@ -49,79 +53,89 @@ function getWorldInfoEntryId(container) {
            `entry_${Math.random().toString(36).slice(2, 11)}`;
 }
 
-// ... (rest of your functions remain mostly the same) ...
-
-// Hook into world info processing (with safeguards)
-function hookWorldInfoProcessing() {
-    try {
-        if (!eventSource || !event_types) {
-            console.warn('WorldInfoImages: eventSource not available');
-            return;
-        }
-
-        eventSource.on(event_types.WORLD_INFO_ACTIVATED, (data) => {
-            if (!extension_settings[extensionName].includeInPrompt || !data.entries) return;
-            
-            data.entries.forEach(entry => {
-                const entryId = entry.uid || entry.id;
-                const imageUrl = getSavedImageUrl(entryId);
-                if (imageUrl) {
-                    entry.content = `${entry.content}\n[Image: ${imageUrl}]`;
-                }
-            });
-        });
-    } catch (error) {
-        console.error('WorldInfoImages: Error in hook:', error);
-    }
+// Create image controls (with safer HTML)
+function createImageControls(entryId) {
+    const container = document.createElement('div');
+    container.className = 'world-info-image-container';
+    container.dataset.entryId = entryId;
+    
+    const savedUrl = getSavedImageUrl(entryId);
+    const escapedUrl = savedUrl ? savedUrl.replace(/"/g, '&quot;') : '';
+    
+    container.innerHTML = `
+        <div class="world-info-image-header">
+            <span>🖼️</span>
+            <span>Image URL</span>
+        </div>
+        <input type="text" 
+               class="world-info-image-input" 
+               placeholder="Enter image URL (https://example.com/image.jpg)"
+               value="${escapedUrl}">
+        <div class="world-info-image-preview-container">
+            ${savedUrl && extension_settings[extensionName].showPreviews ? 
+                `<img src="${escapedUrl}" class="world-info-image-preview" alt="World Info Image">` : 
+                ''}
+        </div>
+        <div class="world-info-image-error"></div>
+        <div class="world-info-image-controls">
+            <button class="world-info-image-btn" data-action="test">Test Image</button>
+            <button class="world-info-image-btn" data-action="clear">Clear</button>
+        </div>
+    `;
+    
+    setupImageControlEvents(container, entryId);
+    return container;
 }
+
+// ... (rest of your functions remain mostly the same) ...
 
 // Main initialization (with better error handling)
 function init() {
     try {
-        console.debug('Initializing WorldInfoImages...');
+        console.debug('[WorldInfoImages] Initializing...');
         loadSettings();
         addStyles();
         
         if (eventSource && event_types) {
             hookWorldInfoProcessing();
         } else {
-            console.warn('WorldInfoImages: Event system not available');
+            console.warn('[WorldInfoImages] Event system unavailable - some features disabled');
         }
         
         startUIMonitoring();
-        console.log('WorldInfoImages loaded');
+        console.log('[WorldInfoImages] Loaded successfully');
     } catch (error) {
-        console.error('WorldInfoImages init error:', error);
+        console.error('[WorldInfoImages] Init error:', error);
     }
 }
 
 // Extension entry point (with improved readiness check)
 jQuery(async () => {
-    const maxWaitTime = 10000; // 10 seconds
-    const startTime = Date.now();
+    console.log('[WorldInfoImages] Starting load...');
     
-    async function waitForDependencies() {
-        while (Date.now() - startTime < maxWaitTime) {
-            if (typeof getContext === 'function' && 
-                typeof saveSettingsDebounced === 'function') {
-                return true;
-            }
-            await new Promise(r => setTimeout(r, 100));
-        }
-        throw new Error('WorldInfoImages: Dependency timeout');
+    // Core dependency check
+    const requiredGlobals = ['getContext', 'saveSettingsDebounced', 'eventSource'];
+    const missingDeps = requiredGlobals.filter(g => !window[g]);
+    
+    if (missingDeps.length) {
+        console.error(`[WorldInfoImages] Missing dependencies: ${missingDeps.join(', ')}`);
+        return;
     }
 
     try {
-        await waitForDependencies();
+        // Wait for world info to initialize
+        let attempts = 0;
+        while (!document.querySelector('.world_entry') && attempts < 50) {
+            await new Promise(r => setTimeout(r, 100));
+            attempts++;
+        }
+
         init();
         
-        // Add settings UI if possible
         if (window.addExtensionControls) {
             addExtensionControls(extensionName, getSettingsHtml(), initializeSettingsUI);
         }
     } catch (error) {
-        console.error('WorldInfoImages failed to load:', error);
+        console.error('[WorldInfoImages] Load failed:', error);
     }
 });
-
-export { init };
