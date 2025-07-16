@@ -1,0 +1,9 @@
+{
+  "name": "World Info Images",
+  "version": "1.0.0",
+  "description": "Attach images to world info entries",
+  "author": "YourName",
+  "main": "world-info-images.js",
+  "tags": ["world-info", "images", "ui"],
+  "sillytavern_version": "1.11.0+"
+}
