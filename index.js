@@ -28,6 +28,12 @@ function saveSettings() {
 
 // Add CSS styles
 function addStyles() {
+    // Remove existing styles if they exist
+    const existingStyles = document.getElementById('world-info-images-styles');
+    if (existingStyles) {
+        existingStyles.remove();
+    }
+    
     const style = document.createElement('style');
     style.id = 'world-info-images-styles';
     style.textContent = `
@@ -111,28 +117,39 @@ function addStyles() {
 
 // Get world info entry ID
 function getWorldInfoEntryId(container) {
-    // Look for the UID in various places
-    const uidInput = container.querySelector('input[name="uid"]');
-    if (uidInput && uidInput.value) {
-        return uidInput.value;
-    }
-    
-    // Try to find it in data attributes
-    if (container.dataset.uid) {
-        return container.dataset.uid;
-    }
-    
-    // Look for it in the world info structure
-    const worldInfoList = container.closest('#world_info');
-    if (worldInfoList) {
-        const entries = worldInfoList.querySelectorAll('.world_entry');
-        const index = Array.from(entries).indexOf(container);
-        if (index !== -1) {
-            return `entry_${index}`;
+    try {
+        // Look for the UID in various places
+        const uidInput = container.querySelector('input[name="uid"]');
+        if (uidInput && uidInput.value) {
+            return uidInput.value;
         }
+        
+        // Try to find it in data attributes
+        if (container.dataset.uid) {
+            return container.dataset.uid;
+        }
+        
+        // Look for it in the world info structure
+        const worldInfoList = container.closest('#world_info');
+        if (worldInfoList) {
+            const entries = worldInfoList.querySelectorAll('.world_entry');
+            const index = Array.from(entries).indexOf(container);
+            if (index !== -1) {
+                return `entry_${index}`;
+            }
+        }
+        
+        // Generate a fallback ID based on some unique property
+        const textArea = container.querySelector('textarea');
+        if (textArea) {
+            return `entry_${textArea.id || Math.random().toString(36).substr(2, 9)}`;
+        }
+        
+        return `entry_${Math.random().toString(36).substr(2, 9)}`;
+    } catch (error) {
+        console.error('Error getting world info entry ID:', error);
+        return `entry_${Math.random().toString(36).substr(2, 9)}`;
     }
-    
-    return null;
 }
 
 // Create image controls
@@ -232,17 +249,23 @@ function isValidUrl(string) {
 
 function showError(container, message) {
     const errorDiv = container.querySelector('.world-info-image-error');
-    errorDiv.textContent = message;
-    errorDiv.style.display = 'block';
+    if (errorDiv) {
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+    }
 }
 
 function clearError(container) {
     const errorDiv = container.querySelector('.world-info-image-error');
-    errorDiv.style.display = 'none';
+    if (errorDiv) {
+        errorDiv.style.display = 'none';
+    }
 }
 
 function updatePreview(container, url) {
     const previewContainer = container.querySelector('.world-info-image-preview-container');
+    if (!previewContainer) return;
+    
     clearError(container);
     
     if (url && isValidUrl(url)) {
@@ -268,7 +291,9 @@ function updatePreview(container, url) {
 
 function clearPreview(container) {
     const previewContainer = container.querySelector('.world-info-image-preview-container');
-    previewContainer.innerHTML = '';
+    if (previewContainer) {
+        previewContainer.innerHTML = '';
+    }
 }
 
 function testImage(container, url) {
@@ -276,12 +301,18 @@ function testImage(container, url) {
     img.onload = () => {
         updatePreview(container, url);
         clearError(container);
-        toastr.success('Image loaded successfully!');
+        // Check if toastr is available
+        if (typeof toastr !== 'undefined') {
+            toastr.success('Image loaded successfully!');
+        }
     };
     img.onerror = () => {
         clearPreview(container);
         showError(container, 'Failed to load image. Please check the URL.');
-        toastr.error('Failed to load image');
+        // Check if toastr is available
+        if (typeof toastr !== 'undefined') {
+            toastr.error('Failed to load image');
+        }
     };
     img.src = url;
 }
@@ -308,63 +339,75 @@ function saveImageUrl(entryId, url) {
 
 // Add controls to world info entries
 function addImageControlsToEntries() {
-    if (!extension_settings[extensionName].enabled) return;
-    
-    const worldInfoEntries = document.querySelectorAll('.world_entry');
-    
-    worldInfoEntries.forEach(entry => {
-        const entryId = getWorldInfoEntryId(entry);
-        if (!entryId) return;
+    try {
+        if (!extension_settings[extensionName].enabled) return;
         
-        // Skip if already has image controls
-        if (entry.querySelector('.world-info-image-container')) return;
+        const worldInfoEntries = document.querySelectorAll('.world_entry');
         
-        // Find a good place to insert the controls
-        const textareaContainer = entry.querySelector('.world_entry_form_control')?.parentElement;
-        if (!textareaContainer) return;
-        
-        const imageControls = createImageControls(entryId);
-        textareaContainer.appendChild(imageControls);
-    });
+        worldInfoEntries.forEach(entry => {
+            const entryId = getWorldInfoEntryId(entry);
+            if (!entryId) return;
+            
+            // Skip if already has image controls
+            if (entry.querySelector('.world-info-image-container')) return;
+            
+            // Find a good place to insert the controls
+            const textareaContainer = entry.querySelector('.world_entry_form_control')?.parentElement;
+            if (!textareaContainer) return;
+            
+            const imageControls = createImageControls(entryId);
+            textareaContainer.appendChild(imageControls);
+        });
+    } catch (error) {
+        console.error('Error adding image controls:', error);
+    }
 }
 
 // Hook into world info processing
 function hookWorldInfoProcessing() {
-    // Listen for world info events
-    eventSource.on(event_types.WORLD_INFO_ACTIVATED, (data) => {
-        if (!extension_settings[extensionName].includeInPrompt) return;
-        
-        // Process activated entries
-        if (data.entries) {
-            data.entries.forEach(entry => {
-                const entryId = entry.uid || entry.id;
-                const imageUrl = getSavedImageUrl(entryId);
-                
-                if (imageUrl) {
-                    // Add image to entry content
-                    const imageReference = `[Image: ${imageUrl}]`;
-                    entry.content = `${entry.content}\n${imageReference}`;
-                }
-            });
-        }
-    });
+    try {
+        // Listen for world info events
+        eventSource.on(event_types.WORLD_INFO_ACTIVATED, (data) => {
+            if (!extension_settings[extensionName].includeInPrompt) return;
+            
+            // Process activated entries
+            if (data.entries) {
+                data.entries.forEach(entry => {
+                    const entryId = entry.uid || entry.id;
+                    const imageUrl = getSavedImageUrl(entryId);
+                    
+                    if (imageUrl) {
+                        // Add image to entry content
+                        const imageReference = `[Image: ${imageUrl}]`;
+                        entry.content = `${entry.content}\n${imageReference}`;
+                    }
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Error hooking world info processing:', error);
+    }
 }
 
 // Monitor for UI changes
 function startUIMonitoring() {
-    const observer = new MutationObserver(() => {
-        addImageControlsToEntries();
-    });
-    
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-    
-    // Initial check
-    setTimeout(() => {
-        addImageControlsToEntries();
-    }, 1000);
+    try {
+        const observer = new MutationObserver(() => {
+            addImageControlsToEntries();
+        });
+        
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
+        // Initial check with delay
+        setTimeout(() => {
+            addImageControlsToEntries();
+        }, 1000);
+    } catch (error) {
+        console.error('Error starting UI monitoring:', error);
+    }
 }
 
 // Settings HTML
@@ -396,53 +439,81 @@ function getSettingsHtml() {
 
 // Initialize settings UI
 function initializeSettingsUI() {
-    $('#world_info_images_enabled').on('change', function() {
-        extension_settings[extensionName].enabled = this.checked;
-        saveSettings();
-    });
-    
-    $('#world_info_images_previews').on('change', function() {
-        extension_settings[extensionName].showPreviews = this.checked;
-        saveSettings();
-    });
-    
-    $('#world_info_images_include').on('change', function() {
-        extension_settings[extensionName].includeInPrompt = this.checked;
-        saveSettings();
-    });
+    try {
+        $('#world_info_images_enabled').on('change', function() {
+            extension_settings[extensionName].enabled = this.checked;
+            saveSettings();
+        });
+        
+        $('#world_info_images_previews').on('change', function() {
+            extension_settings[extensionName].showPreviews = this.checked;
+            saveSettings();
+        });
+        
+        $('#world_info_images_include').on('change', function() {
+            extension_settings[extensionName].includeInPrompt = this.checked;
+            saveSettings();
+        });
+    } catch (error) {
+        console.error('Error initializing settings UI:', error);
+    }
 }
 
 // Main initialization
 function init() {
-    loadSettings();
-    addStyles();
-    hookWorldInfoProcessing();
-    startUIMonitoring();
-    
-    console.log('World Info Images extension loaded');
+    try {
+        console.log('Initializing World Info Images extension...');
+        
+        loadSettings();
+        addStyles();
+        hookWorldInfoProcessing();
+        startUIMonitoring();
+        
+        console.log('World Info Images extension loaded successfully');
+    } catch (error) {
+        console.error('Error initializing World Info Images extension:', error);
+        throw error;
+    }
 }
 
 // Extension entry point
 jQuery(async () => {
-    // Wait for SillyTavern to be ready
-    await new Promise(resolve => {
-        if (typeof getContext === 'function') {
-            resolve();
-        } else {
-            const checkInterval = setInterval(() => {
-                if (typeof getContext === 'function') {
-                    clearInterval(checkInterval);
-                    resolve();
-                }
-            }, 100);
+    try {
+        console.log('World Info Images extension starting...');
+        
+        // Wait for SillyTavern to be ready
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Timeout waiting for SillyTavern to be ready'));
+            }, 10000); // 10 second timeout
+            
+            if (typeof getContext === 'function') {
+                clearTimeout(timeout);
+                resolve();
+            } else {
+                const checkInterval = setInterval(() => {
+                    if (typeof getContext === 'function') {
+                        clearInterval(checkInterval);
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                }, 100);
+            }
+        });
+        
+        // Initialize the extension
+        init();
+        
+        // Add to extensions menu if possible
+        if (typeof addExtensionControls === 'function') {
+            addExtensionControls(extensionName, getSettingsHtml(), initializeSettingsUI);
         }
-    });
-    
-    init();
-    
-    // Add to extensions menu if possible
-    if (typeof addExtensionControls === 'function') {
-        addExtensionControls(extensionName, getSettingsHtml(), initializeSettingsUI);
+        
+        console.log('World Info Images extension setup complete');
+        
+    } catch (error) {
+        console.error('Failed to load World Info Images extension:', error);
+        // Don't re-throw the error to prevent it from propagating
     }
 });
 
