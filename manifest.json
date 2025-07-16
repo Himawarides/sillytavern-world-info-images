@@ -1,12 +1,15 @@
 {
   "display_name": "World Info Images",
   "loading_order": 50,
-  "requires": [],
   "optional": [],
   "js": "index.js",
   "css": "",
-  "author": "Your Name",
+  "homePage": "https://github.com/Himawarides/sillytavern-world-info-images",
+  "name": "World Info Images",
+  "description": "Adds image support to world info entries",
   "version": "1.0.0",
-  "homePage": "https://github.com/yourusername/sillytavern-worldinfo-images",
+  "authors": "Your Name",
+  "tags": "world,info,images",
+  "requirements": ["world-info"],
   "description": "Add image URLs to World Info entries that the AI can see and reference in conversations."
 }
