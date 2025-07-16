@@ -8,5 +8,5 @@
   "author": "Your Name",
   "version": "1.0.0",
   "homePage": "https://github.com/yourusername/sillytavern-worldinfo-images",
-  "description": "Adds image URL support to World Info entries, allowing you to attach images that the AI can see and reference."
+  "description": "Add image URLs to World Info entries that the AI can see and reference in conversations."
 }
