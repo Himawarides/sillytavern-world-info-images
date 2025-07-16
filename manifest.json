@@ -1,9 +1,12 @@
 {
-  "name": "sillytavern-worldinfo-images",
-  "version": "1.0.0",
-  "description": "SillyTavern extension for adding images to World Info entries",
-  "main": "world-info-images.js",
-  "keywords": ["sillytavern", "extension", "worldinfo", "images"],
+  "display_name": "World Info Images",
+  "loading_order": 50,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "",
   "author": "Your Name",
-  "license": "MIT"
+  "version": "1.0.0",
+  "homePage": "https://github.com/yourusername/sillytavern-worldinfo-images",
+  "description": "Adds image URL support to World Info entries, allowing you to attach images that the AI can see and reference."
 }
