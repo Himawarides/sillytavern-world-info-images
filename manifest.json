@@ -1,0 +1,10 @@
+{
+    "display_name": "World Info Images (Multimodal)",
+    "loading_order": 20,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "TuNombre",
+    "version": "1.0.0"
+}
