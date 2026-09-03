@@ -15,10 +15,8 @@ function initSettings() {
 
 let activeImagesForTurn = [];
 let activeFilesForTurn = [];
+let activeObserver = null;
 
-/**
- * Lee archivo de imagen a Base64 sin compresión destructiva
- */
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -28,9 +26,6 @@ function fileToBase64(file) {
     });
 }
 
-/**
- * Lee archivo de texto plano (.txt, .md, .json, .csv, etc.)
- */
 function fileToText(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -40,13 +35,9 @@ function fileToText(file) {
     });
 }
 
-/**
- * Extrae texto de un archivo PDF en el navegador
- */
 async function extractTextFromPDF(file) {
     const arrayBuffer = await file.arrayBuffer();
     
-    // Si SillyTavern o el entorno tiene pdfjsLib cargado
     if (window.pdfjsLib) {
         try {
             const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -63,7 +54,6 @@ async function extractTextFromPDF(file) {
         }
     }
 
-    // Extractor nativo ligero de respaldo para flujos de texto PDF
     const textDecoder = new TextDecoder('utf-8');
     const rawString = textDecoder.decode(new Uint8Array(arrayBuffer));
     const textMatches = [];
@@ -126,18 +116,33 @@ function getFileIcon(filename) {
     return 'fa-file-lines';
 }
 
-function injectAttachmentsUIIntoEntry(entryElement) {
-    const $entry = $(entryElement);
+function injectAttachmentsUIIntoEntry($entry) {
+    if (!$entry || !$entry.length) return;
+
+    // BLOQUEO SÍNCRONO: Previene llamadas duplicadas concurrentes
+    if ($entry.hasClass('wi-att-processed') || $entry.find('.wi-attachments-container').length > 0) {
+        return;
+    }
+    $entry.addClass('wi-att-processed');
+
     const uid = $entry.closest('.world_entry').data('uid');
-    
-    if ($entry.find('.wi-attachments-container').length > 0 || uid === undefined) {
+    if (uid === undefined || uid === null) {
+        $entry.removeClass('wi-att-processed');
         return;
     }
 
     const currentWorld = $('#world_editor_select option:selected').text();
-    if (!currentWorld) return;
+    if (!currentWorld) {
+        $entry.removeClass('wi-att-processed');
+        return;
+    }
 
     loadWorldInfo(currentWorld).then(data => {
+        // Doble verificación tras resolver la promesa
+        if ($entry.find('.wi-attachments-container').length > 0) {
+            return;
+        }
+
         if (!data || !data.entries || !data.entries[uid]) return;
 
         const entry = data.entries[uid];
@@ -169,13 +174,14 @@ function injectAttachmentsUIIntoEntry(entryElement) {
                 <div class="wi-att-section" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
                     <div class="wi-att-header">
                         <div class="wi-att-header-left">
-                            <i class="fa-solid fa-paperclip"></i> <span>Archivos y Documentos (.pdf, .txt, .md, .json)</span>
+                            <i class="fa-solid fa-paperclip"></i> <span>Archivos (.pdf, .txt, .md, .json)</span>
                         </div>
                         <span class="wi-badge wi-file-badge">${files.length} archivo(s)</span>
                     </div>
                     <div class="wi-att-controls">
-                        <label class="menu_button fa-solid fa-file-arrow-up wi-file-upload-btn" style="width: 100%;" title="Subir archivos de texto o PDF">
-                            &nbsp;<span>Adjuntar Archivo (.pdf, .txt, .md, .json, .csv)</span>
+                        <label class="menu_button wi-file-upload-btn" style="width: 100%; justify-content: center; gap: 6px;" title="Subir archivos">
+                            <i class="fa-solid fa-file-arrow-up"></i>
+                            <span>Adjuntar Documento</span>
                             <input type="file" accept=".pdf,.txt,.md,.markdown,.json,.csv,.text" multiple style="display: none;" class="wi-doc-file-input">
                         </label>
                     </div>
@@ -261,7 +267,6 @@ function injectAttachmentsUIIntoEntry(entryElement) {
             renderFileList();
         };
 
-        // Acciones de imágenes
         const handleAddUrl = async () => {
             const url = $urlInput.val().trim();
             if (url) {
@@ -284,7 +289,6 @@ function injectAttachmentsUIIntoEntry(entryElement) {
             e.target.value = '';
         });
 
-        // Acciones de documentos (.pdf, .txt, .md, .json, .csv)
         $docFileInput.on('change', async function (e) {
             const uploaded = Array.from(e.target.files || []);
             for (const file of uploaded) {
@@ -311,33 +315,48 @@ function injectAttachmentsUIIntoEntry(entryElement) {
 
         renderGallery();
         renderFileList();
+
+        // Eliminar cualquier duplicado residual antes de insertar
+        $entry.find('.wi-attachments-container').remove();
         $entry.append($container);
+    }).catch(() => {
+        $entry.removeClass('wi-att-processed');
     });
 }
 
 function setupMutationObserver() {
-    const observer = new MutationObserver((mutations) => {
+    if (activeObserver) {
+        activeObserver.disconnect();
+        activeObserver = null;
+    }
+
+    const targetNode = document.getElementById('world_popup_entries_list');
+    if (!targetNode) return;
+
+    activeObserver = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
                 if (node.nodeType === Node.ELEMENT_NODE) {
+                    // Ignora cambios generados por la propia extensión para evitar bucles infinitos
+                    if (node.classList?.contains('wi-attachments-container') || node.closest?.('.wi-attachments-container')) {
+                        continue;
+                    }
+
                     const $node = $(node);
-                    if ($node.hasClass('world_entry_edit') || $node.find('.world_entry_edit').length) {
-                        injectAttachmentsUIIntoEntry($node.hasClass('world_entry_edit') ? $node : $node.find('.world_entry_edit'));
+                    if ($node.hasClass('world_entry_edit')) {
+                        injectAttachmentsUIIntoEntry($node);
+                    } else {
+                        const $edits = $node.find('.world_entry_edit');
+                        $edits.each((_, el) => injectAttachmentsUIIntoEntry($(el)));
                     }
                 }
             }
         }
     });
 
-    const targetNode = document.getElementById('world_popup_entries_list');
-    if (targetNode) {
-        observer.observe(targetNode, { childList: true, subtree: true });
-    }
+    activeObserver.observe(targetNode, { childList: true, subtree: true });
 }
 
-/**
- * 1. Capturar entradas activadas de World Info (imágenes y archivos)
- */
 eventSource.on(event_types.WORLD_INFO_ACTIVATED, (activatedEntries) => {
     activeImagesForTurn = [];
     activeFilesForTurn = [];
@@ -345,7 +364,6 @@ eventSource.on(event_types.WORLD_INFO_ACTIVATED, (activatedEntries) => {
 
     if (Array.isArray(activatedEntries)) {
         for (const entry of activatedEntries) {
-            // Recoger imágenes
             const imgs = getEntryImages(entry);
             for (const imgUrl of imgs) {
                 activeImagesForTurn.push({
@@ -354,7 +372,6 @@ eventSource.on(event_types.WORLD_INFO_ACTIVATED, (activatedEntries) => {
                 });
             }
 
-            // Recoger archivos de texto / PDF
             const attachedFiles = getEntryFiles(entry);
             for (const fileObj of attachedFiles) {
                 activeFilesForTurn.push({
@@ -367,25 +384,15 @@ eventSource.on(event_types.WORLD_INFO_ACTIVATED, (activatedEntries) => {
     }
 });
 
-/**
- * 2. Inyectar imágenes (Vision) y contenido de archivos (Documentos) en el prompt
- */
 eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
-    if (!extension_settings[MODULE_NAME]?.enabled) {
-        return;
-    }
-
-    if (!data || !Array.isArray(data.chat)) {
-        return;
-    }
+    if (!extension_settings[MODULE_NAME]?.enabled) return;
+    if (!data || !Array.isArray(data.chat)) return;
 
     const detailLevel = extension_settings[MODULE_NAME]?.detail_level || 'high';
 
-    // A) Si hay documentos adjuntos activados, insertarlos en el contexto
     if (activeFilesForTurn.length > 0) {
         const fileContextBlocks = activeFilesForTurn.map(f => `[Documento adjunto: "${f.name}"]\n${f.content}`).join('\n\n');
         
-        // Inyectar en el primer mensaje de sistema o al inicio de la conversación
         const sysMsg = data.chat.find(m => m.role === 'system');
         if (sysMsg) {
             if (typeof sysMsg.content === 'string') {
@@ -399,7 +406,6 @@ eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
         }
     }
 
-    // B) Si hay imágenes activadas, inyectarlas en el último mensaje de usuario en modo Vision
     if (activeImagesForTurn.length > 0) {
         for (let i = data.chat.length - 1; i >= 0; i--) {
             const msg = data.chat[i];
@@ -434,6 +440,4 @@ jQuery(async () => {
     eventSource.on(event_types.WORLDINFO_UPDATED, () => {
         setupMutationObserver();
     });
-
-    console.log('[WI Attachments] Extensión de Imágenes y Documentos cargada con éxito.');
 });
