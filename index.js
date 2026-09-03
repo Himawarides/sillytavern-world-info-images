@@ -8,11 +8,15 @@ const EXTENSION_KEY = 'images';
 function initSettings() {
     extension_settings[MODULE_NAME] = extension_settings[MODULE_NAME] || {
         enabled: true,
+        detail_level: 'high', // 'high' garantiza máxima fidelidad en OpenAI/Claude/Gemini/OpenRouter
     };
 }
 
 let activeImagesForTurn = [];
 
+/**
+ * Lee el archivo conservando la resolución original completa
+ */
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -31,6 +35,25 @@ function getEntryImages(entry) {
         return [entry.extensions.image_url.trim()];
     }
     return [];
+}
+
+/**
+ * Muestra la imagen a tamaño completo al pulsar sobre su miniatura
+ */
+function showImageModal(src) {
+    const overlay = $(`
+        <div class="wi-image-modal-overlay">
+            <img class="wi-image-modal-img" src="${src}" alt="Full Quality Preview">
+        </div>
+    `);
+
+    overlay.on('click', function () {
+        overlay.fadeOut(150, function () {
+            overlay.remove();
+        });
+    });
+
+    $('body').append(overlay);
 }
 
 function injectImageUIIntoEntry(entryElement) {
@@ -53,13 +76,16 @@ function injectImageUIIntoEntry(entryElement) {
         const containerHtml = `
             <div class="wi-image-container">
                 <div class="wi-image-header">
-                    <span><i class="fa-solid fa-images"></i> Imágenes Multimodales (Vision AI)</span>
+                    <div class="wi-image-header-left">
+                        <i class="fa-solid fa-images"></i> <span>Imágenes Vision AI</span>
+                        <span class="wi-image-quality-badge" title="Las imágenes se envían con resolución de alta definición (High Detail)"><i class="fa-solid fa-sparkles"></i> High Detail</span>
+                    </div>
                     <span class="wi-image-count-badge">${images.length} imagen(es)</span>
                 </div>
                 <div class="wi-image-controls">
                     <input type="text" class="text_pole wi-image-url-input" placeholder="Pegar URL de imagen...">
                     <button class="menu_button wi-image-add-url-btn fa-solid fa-plus" title="Añadir URL"></button>
-                    <label class="menu_button fa-solid fa-upload wi-image-upload-btn" title="Subir imágenes">
+                    <label class="menu_button fa-solid fa-upload wi-image-upload-btn" title="Subir imágenes en alta calidad">
                         <input type="file" accept="image/*" multiple style="display: none;" class="wi-image-file-input">
                     </label>
                 </div>
@@ -80,14 +106,21 @@ function injectImageUIIntoEntry(entryElement) {
 
             images.forEach((imgSrc, index) => {
                 const card = $(`
-                    <div class="wi-image-card">
+                    <div class="wi-image-card" title="Toca para ver en tamaño completo">
                         <img src="${imgSrc}" alt="WI Image ${index + 1}" />
                         <button class="wi-image-delete-btn fa-solid fa-xmark" title="Eliminar" data-index="${index}"></button>
                     </div>
                 `);
 
+                // Abrir visor en grande al pulsar en la imagen
+                card.on('click', function (e) {
+                    if ($(e.target).hasClass('wi-image-delete-btn')) return;
+                    showImageModal(imgSrc);
+                });
+
+                // Eliminar miniatura
                 card.find('.wi-image-delete-btn').on('click', async function (e) {
-                    e.preventDefault();
+                    e.stopPropagation();
                     images.splice(index, 1);
                     await saveChanges();
                 });
@@ -140,8 +173,6 @@ function injectImageUIIntoEntry(entryElement) {
         });
 
         renderGallery();
-
-        // Se anexa al final del drawer de edición para tomar el ancho completo
         $entry.append($container);
     });
 }
@@ -195,6 +226,8 @@ eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
         return;
     }
 
+    const detailLevel = extension_settings[MODULE_NAME]?.detail_level || 'high';
+
     for (let i = data.chat.length - 1; i >= 0; i--) {
         const msg = data.chat[i];
         if (msg.role === 'user') {
@@ -210,6 +243,7 @@ eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
                         type: 'image_url',
                         image_url: {
                             url: item.url,
+                            detail: detailLevel, // <--- ALTA CALIDAD FORZADA
                         },
                     });
                 }
