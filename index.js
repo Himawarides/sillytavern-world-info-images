@@ -3,7 +3,7 @@ import { extension_settings } from '../../../extensions.js';
 import { loadWorldInfo, saveWorldInfo, setWIOriginalDataValue } from '../../../world-info.js';
 
 const MODULE_NAME = 'st_worldinfo_images';
-const EXTENSION_KEY = 'image_url';
+const EXTENSION_KEY = 'images'; // Almacena un array de strings (URLs o Data URLs en base64)
 
 function initSettings() {
     extension_settings[MODULE_NAME] = extension_settings[MODULE_NAME] || {
@@ -14,173 +14,214 @@ function initSettings() {
 let activeImagesForTurn = [];
 
 /**
- * Comprime y convierte una imagen a Base64 para ahorrar memoria en móvil
+ * Convierte un archivo a base64 Data URL
  */
-function compressAndConvertImage(file, maxWidth = 1024, quality = 0.8) {
+function fileToBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-                let width = img.width;
-                let height = img.height;
-
-                if (width > maxWidth) {
-                    height = Math.round((height * maxWidth) / width);
-                    width = maxWidth;
-                }
-
-                const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-
-                // Exportar como JPEG optimizado o WebP si es compatible
-                const dataUrl = canvas.toDataURL('image/jpeg', quality);
-                resolve(dataUrl);
-            };
-            img.onerror = (err) => reject(err);
-            img.src = event.target.result;
-        };
-        reader.onerror = (err) => reject(err);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
         reader.readAsDataURL(file);
     });
 }
 
 /**
- * Inyecta la UI limpia en la entrada de World Info
+ * Normaliza las imágenes de una entrada (por compatibilidad con versiones previas)
+ */
+function getEntryImages(entry) {
+    if (!entry.extensions) return [];
+    
+    // Si ya existe el array 'images'
+    if (Array.isArray(entry.extensions[EXTENSION_KEY])) {
+        return entry.extensions[EXTENSION_KEY];
+    }
+    
+    // Compatibilidad si venía de 'image_url' como string individual
+    if (typeof entry.extensions.image_url === 'string' && entry.extensions.image_url.trim()) {
+        return [entry.extensions.image_url.trim()];
+    }
+
+    return [];
+}
+
+/**
+ * Inyecta la interfaz de múltiples imágenes en la entrada de World Info
  */
 function injectImageUIIntoEntry(entryElement) {
-    const $editContainer = $(entryElement).closest('.world_entry_edit');
-    const $entryWrapper = $(entryElement).closest('.world_entry');
-    const uid = $entryWrapper.data('uid') ?? $entryWrapper.attr('uid');
-
-    if (uid === undefined || $editContainer.find('.wi-image-container').length > 0) {
+    const $entry = $(entryElement);
+    const uid = $entry.closest('.world_entry').data('uid');
+    
+    // Evitar duplicar controles si ya se inyectó
+    if ($entry.find('.wi-image-container').length > 0 || uid === undefined) {
         return;
     }
 
     const currentWorld = $('#world_editor_select option:selected').text();
     if (!currentWorld) return;
 
-    loadWorldInfo(currentWorld).then((data) => {
+    loadWorldInfo(currentWorld).then(data => {
         if (!data || !data.entries || !data.entries[uid]) return;
 
-        // Doble verificación anti-duplicado tras la carga asíncrona
-        if ($editContainer.find('.wi-image-container').length > 0) return;
-
         const entry = data.entries[uid];
-        const currentImageUrl = entry.extensions?.[EXTENSION_KEY] || '';
+        let images = getEntryImages(entry);
 
         const containerHtml = `
-            <div class="wi-image-container" data-uid="${uid}">
+            <div class="wi-image-container">
                 <div class="wi-image-header">
-                    <i class="fa-solid fa-image"></i> Multimodal Image (Vision AI)
+                    <span><i class="fa-solid fa-images"></i> Imágenes Multimodales (Vision AI)</span>
+                    <span class="wi-image-count-badge">${images.length} imagen(es)</span>
                 </div>
                 <div class="wi-image-controls">
-                    <input type="text" class="text_pole wi-image-url" placeholder="URL o sube imagen..." value="${currentImageUrl}">
-                    <label class="menu_button wi-image-btn fa-solid fa-upload wi-image-upload-btn" title="Subir desde el dispositivo">
-                        <input type="file" accept="image/*" style="display: none;" class="wi-image-file-input">
+                    <input type="text" class="text_pole wi-image-url-input" placeholder="Pegar URL de imagen y presionar Enter...">
+                    <button class="menu_button wi-image-add-url-btn fa-solid fa-plus" title="Añadir URL"></button>
+                    <label class="menu_button fa-solid fa-upload wi-image-upload-btn" title="Subir imágenes (puedes elegir varias)">
+                        <input type="file" accept="image/*" multiple style="display: none;" class="wi-image-file-input">
                     </label>
-                    <button type="button" class="menu_button wi-image-btn wi-image-clear-btn fa-solid fa-trash" title="Quitar imagen"></button>
                 </div>
-                <div class="wi-image-preview-wrapper ${currentImageUrl ? '' : 'hidden'}">
-                    <img class="wi-image-preview" src="${currentImageUrl || ''}" alt="Preview" />
-                </div>
+                <div class="wi-image-gallery"></div>
             </div>
         `;
 
         const $container = $(containerHtml);
-        const $urlInput = $container.find('.wi-image-url');
+        const $urlInput = $container.find('.wi-image-url-input');
+        const $addUrlBtn = $container.find('.wi-image-add-url-btn');
         const $fileInput = $container.find('.wi-image-file-input');
-        const $previewWrapper = $container.find('.wi-image-preview-wrapper');
-        const $preview = $container.find('.wi-image-preview');
-        const $clearBtn = $container.find('.wi-image-clear-btn');
+        const $gallery = $container.find('.wi-image-gallery');
+        const $badge = $container.find('.wi-image-count-badge');
 
-        const updateImage = async (url) => {
-            if (!entry.extensions) entry.extensions = {};
-            entry.extensions[EXTENSION_KEY] = url;
+        // Función para renderizar las miniaturas
+        const renderGallery = () => {
+            $gallery.empty();
+            $badge.text(`${images.length} imagen(es)`);
 
-            setWIOriginalDataValue(data, uid, `extensions.${EXTENSION_KEY}`, url);
-            await saveWorldInfo(currentWorld, data);
+            images.forEach((imgSrc, index) => {
+                const card = $(`
+                    <div class="wi-image-card">
+                        <img src="${imgSrc}" alt="WI Image ${index + 1}" />
+                        <button class="wi-image-delete-btn fa-solid fa-xmark" title="Eliminar imagen" data-index="${index}"></button>
+                    </div>
+                `);
 
-            if (url) {
-                $preview.attr('src', url);
-                $previewWrapper.removeClass('hidden');
-            } else {
-                $preview.attr('src', '');
-                $previewWrapper.addClass('hidden');
-            }
-            $urlInput.val(url);
+                card.find('.wi-image-delete-btn').on('click', async function (e) {
+                    e.preventDefault();
+                    images.splice(index, 1);
+                    await saveChanges();
+                });
+
+                $gallery.append(card);
+            });
         };
 
-        $urlInput.on('change', function () {
-            updateImage($(this).val().trim());
+        // Guardar cambios en el Lorebook
+        const saveChanges = async () => {
+            if (!entry.extensions) entry.extensions = {};
+            entry.extensions[EXTENSION_KEY] = images;
+            
+            // Eliminar clave antigua si existía
+            delete entry.extensions.image_url;
+
+            setWIOriginalDataValue(data, uid, `extensions.${EXTENSION_KEY}`, images);
+            await saveWorldInfo(currentWorld, data);
+            renderGallery();
+        };
+
+        // Añadir por URL
+        const handleAddUrl = async () => {
+            const url = $urlInput.val().trim();
+            if (url) {
+                images.push(url);
+                $urlInput.val('');
+                await saveChanges();
+            }
+        };
+
+        $addUrlBtn.on('click', (e) => {
+            e.preventDefault();
+            handleAddUrl();
         });
 
+        $urlInput.on('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddUrl();
+            }
+        });
+
+        // Añadir por archivo local (soporta múltiples a la vez)
         $fileInput.on('change', async function (e) {
-            const file = e.target.files[0];
-            if (file) {
-                try {
-                    toastr.info('Procesando imagen...', '', { timeOut: 1500 });
-                    const compressedBase64 = await compressAndConvertImage(file);
-                    await updateImage(compressedBase64);
-                    toastr.success('Imagen cargada');
-                } catch (err) {
-                    console.error('[WI Image Error]', err);
-                    toastr.error('Error al cargar la imagen');
+            const files = Array.from(e.target.files || []);
+            if (files.length > 0) {
+                for (const file of files) {
+                    const base64 = await fileToBase64(file);
+                    images.push(base64);
                 }
+                await saveChanges();
             }
             e.target.value = '';
         });
 
-        $clearBtn.on('click', async function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            await updateImage('');
-        });
+        renderGallery();
 
-        // Insertar al final del formulario de la entrada para ocupar ancho completo
-        $editContainer.append($container);
+        // Insertar después del campo de contenido
+        const contentField = $entry.find('textarea[name="content"]').closest('div');
+        if (contentField.length) {
+            contentField.after($container);
+        } else {
+            $entry.append($container);
+        }
     });
 }
 
 /**
- * Escucha la apertura de drawers para inyectar la UI
+ * Observador para detectar cuándo se abre el drawer de edición
  */
-function setupDrawerListener() {
-    $(document).off('click.wi_images', '.world_entry .inline-drawer-header, .world_entry .inline-drawer-icon');
-    $(document).on('click.wi_images', '.world_entry .inline-drawer-header, .world_entry .inline-drawer-icon', function () {
-        const $entry = $(this).closest('.world_entry');
-        setTimeout(() => {
-            const $edit = $entry.find('.world_entry_edit');
-            if ($edit.length) {
-                injectImageUIIntoEntry($edit);
+function setupMutationObserver() {
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const $node = $(node);
+                    if ($node.hasClass('world_entry_edit') || $node.find('.world_entry_edit').length) {
+                        injectImageUIIntoEntry($node.hasClass('world_entry_edit') ? $node : $node.find('.world_entry_edit'));
+                    }
+                }
             }
-        }, 80);
+        }
     });
+
+    const targetNode = document.getElementById('world_popup_entries_list');
+    if (targetNode) {
+        observer.observe(targetNode, { childList: true, subtree: true });
+    }
 }
 
-// 1. Capturar imágenes de las entradas activadas
+/**
+ * 1. Escuchar activación de entradas de World Info
+ */
 eventSource.on(event_types.WORLD_INFO_ACTIVATED, (activatedEntries) => {
     activeImagesForTurn = [];
     if (!extension_settings[MODULE_NAME]?.enabled) return;
 
     if (Array.isArray(activatedEntries)) {
         for (const entry of activatedEntries) {
-            const img = entry.extensions?.[EXTENSION_KEY];
-            if (img && typeof img === 'string' && img.trim().length > 0) {
-                activeImagesForTurn.push({
-                    uid: entry.uid,
-                    url: img,
-                });
+            const imgs = getEntryImages(entry);
+            if (imgs.length > 0) {
+                console.log(`[WI Images] Entrada UID ${entry.uid} activó ${imgs.length} imagen(es)`);
+                for (const imgUrl of imgs) {
+                    activeImagesForTurn.push({
+                        uid: entry.uid,
+                        comment: entry.comment || 'World Info',
+                        url: imgUrl,
+                    });
+                }
             }
         }
     }
 });
 
-// 2. Inyectar imágenes al mensaje de usuario enviado al LLM Vision
+/**
+ * 2. Inyectar todas las imágenes activadas en el prompt multimodal
+ */
 eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
     if (!extension_settings[MODULE_NAME]?.enabled || activeImagesForTurn.length === 0) {
         return;
@@ -190,11 +231,16 @@ eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
         return;
     }
 
+    console.log(`[WI Images] Inyectando ${activeImagesForTurn.length} imagen(es) totales de World Info en el prompt multimodal`);
+
+    // Inyectar en el último mensaje de usuario
     for (let i = data.chat.length - 1; i >= 0; i--) {
         const msg = data.chat[i];
         if (msg.role === 'user') {
             if (typeof msg.content === 'string') {
-                msg.content = [{ type: 'text', text: msg.content }];
+                msg.content = [
+                    { type: 'text', text: msg.content }
+                ];
             }
 
             if (Array.isArray(msg.content)) {
@@ -212,11 +258,14 @@ eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
     }
 });
 
-jQuery(() => {
+// Inicialización
+jQuery(async () => {
     initSettings();
-    setupDrawerListener();
+    setupMutationObserver();
 
     eventSource.on(event_types.WORLDINFO_UPDATED, () => {
-        setupDrawerListener();
+        setupMutationObserver();
     });
+
+    console.log('[WI Images] Extensión de Múltiples Imágenes para World Info cargada con éxito.');
 });
