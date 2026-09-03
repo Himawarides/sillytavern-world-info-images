@@ -1,4 +1,4 @@
-.wi-image-container {
+.wi-attachments-container {
     width: 100% !important;
     flex-basis: 100% !important;
     box-sizing: border-box !important;
@@ -9,11 +9,17 @@
     background: rgba(0, 0, 0, 0.25);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     clear: both;
 }
 
-.wi-image-header {
+.wi-att-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.wi-att-header {
     font-size: 0.85em;
     font-weight: bold;
     display: flex;
@@ -23,20 +29,20 @@
     gap: 4px;
 }
 
-.wi-image-header-left {
+.wi-att-header-left {
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-.wi-image-controls {
+.wi-att-controls {
     display: flex;
     gap: 6px;
     align-items: center;
     width: 100%;
 }
 
-.wi-image-controls input[type="text"] {
+.wi-att-controls input[type="text"] {
     flex: 1 1 auto;
     min-width: 0;
     font-size: 0.85em;
@@ -45,7 +51,7 @@
     box-sizing: border-box;
 }
 
-.wi-image-controls .menu_button {
+.wi-att-controls .menu_button {
     flex-shrink: 0;
     margin: 0;
     padding: 0 12px;
@@ -56,6 +62,7 @@
     cursor: pointer;
 }
 
+/* Galería de imágenes */
 .wi-image-gallery {
     display: flex;
     flex-wrap: wrap;
@@ -104,7 +111,65 @@
     z-index: 2;
 }
 
-.wi-image-count-badge {
+/* Lista de documentos */
+.wi-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.wi-file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    border-radius: 6px;
+    font-size: 0.85em;
+    gap: 8px;
+}
+
+.wi-file-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.wi-file-info i {
+    color: var(--SmartThemeQuoteColor, #ffcc00);
+}
+
+.wi-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wi-file-size {
+    opacity: 0.6;
+    font-size: 0.8em;
+}
+
+.wi-file-delete-btn {
+    background: transparent;
+    color: #ff6b6b;
+    border: none;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+}
+
+.wi-file-delete-btn:hover {
+    background: rgba(255, 0, 0, 0.2);
+}
+
+/* Badges */
+.wi-badge {
     font-size: 0.8em;
     opacity: 0.85;
     background: rgba(255, 255, 255, 0.1);
@@ -112,7 +177,7 @@
     border-radius: 4px;
 }
 
-.wi-image-quality-badge {
+.wi-quality-badge {
     font-size: 0.75em;
     color: #4cd964;
     background: rgba(76, 217, 100, 0.15);
@@ -122,7 +187,7 @@
     font-weight: normal;
 }
 
-/* Modal de visor a pantalla completa */
+/* Modal de visor de imagen */
 .wi-image-modal-overlay {
     position: fixed;
     top: 0;
