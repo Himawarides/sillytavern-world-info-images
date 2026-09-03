@@ -3,7 +3,7 @@ import { extension_settings } from '../../../extensions.js';
 import { loadWorldInfo, saveWorldInfo, setWIOriginalDataValue } from '../../../world-info.js';
 
 const MODULE_NAME = 'st_worldinfo_images';
-const EXTENSION_KEY = 'images'; // Almacena un array de strings (URLs o Data URLs en base64)
+const EXTENSION_KEY = 'images';
 
 function initSettings() {
     extension_settings[MODULE_NAME] = extension_settings[MODULE_NAME] || {
@@ -13,9 +13,6 @@ function initSettings() {
 
 let activeImagesForTurn = [];
 
-/**
- * Convierte un archivo a base64 Data URL
- */
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -25,33 +22,21 @@ function fileToBase64(file) {
     });
 }
 
-/**
- * Normaliza las imágenes de una entrada (por compatibilidad con versiones previas)
- */
 function getEntryImages(entry) {
     if (!entry.extensions) return [];
-    
-    // Si ya existe el array 'images'
     if (Array.isArray(entry.extensions[EXTENSION_KEY])) {
         return entry.extensions[EXTENSION_KEY];
     }
-    
-    // Compatibilidad si venía de 'image_url' como string individual
     if (typeof entry.extensions.image_url === 'string' && entry.extensions.image_url.trim()) {
         return [entry.extensions.image_url.trim()];
     }
-
     return [];
 }
 
-/**
- * Inyecta la interfaz de múltiples imágenes en la entrada de World Info
- */
 function injectImageUIIntoEntry(entryElement) {
     const $entry = $(entryElement);
     const uid = $entry.closest('.world_entry').data('uid');
     
-    // Evitar duplicar controles si ya se inyectó
     if ($entry.find('.wi-image-container').length > 0 || uid === undefined) {
         return;
     }
@@ -72,9 +57,9 @@ function injectImageUIIntoEntry(entryElement) {
                     <span class="wi-image-count-badge">${images.length} imagen(es)</span>
                 </div>
                 <div class="wi-image-controls">
-                    <input type="text" class="text_pole wi-image-url-input" placeholder="Pegar URL de imagen y presionar Enter...">
+                    <input type="text" class="text_pole wi-image-url-input" placeholder="Pegar URL de imagen...">
                     <button class="menu_button wi-image-add-url-btn fa-solid fa-plus" title="Añadir URL"></button>
-                    <label class="menu_button fa-solid fa-upload wi-image-upload-btn" title="Subir imágenes (puedes elegir varias)">
+                    <label class="menu_button fa-solid fa-upload wi-image-upload-btn" title="Subir imágenes">
                         <input type="file" accept="image/*" multiple style="display: none;" class="wi-image-file-input">
                     </label>
                 </div>
@@ -89,7 +74,6 @@ function injectImageUIIntoEntry(entryElement) {
         const $gallery = $container.find('.wi-image-gallery');
         const $badge = $container.find('.wi-image-count-badge');
 
-        // Función para renderizar las miniaturas
         const renderGallery = () => {
             $gallery.empty();
             $badge.text(`${images.length} imagen(es)`);
@@ -98,7 +82,7 @@ function injectImageUIIntoEntry(entryElement) {
                 const card = $(`
                     <div class="wi-image-card">
                         <img src="${imgSrc}" alt="WI Image ${index + 1}" />
-                        <button class="wi-image-delete-btn fa-solid fa-xmark" title="Eliminar imagen" data-index="${index}"></button>
+                        <button class="wi-image-delete-btn fa-solid fa-xmark" title="Eliminar" data-index="${index}"></button>
                     </div>
                 `);
 
@@ -112,12 +96,9 @@ function injectImageUIIntoEntry(entryElement) {
             });
         };
 
-        // Guardar cambios en el Lorebook
         const saveChanges = async () => {
             if (!entry.extensions) entry.extensions = {};
             entry.extensions[EXTENSION_KEY] = images;
-            
-            // Eliminar clave antigua si existía
             delete entry.extensions.image_url;
 
             setWIOriginalDataValue(data, uid, `extensions.${EXTENSION_KEY}`, images);
@@ -125,7 +106,6 @@ function injectImageUIIntoEntry(entryElement) {
             renderGallery();
         };
 
-        // Añadir por URL
         const handleAddUrl = async () => {
             const url = $urlInput.val().trim();
             if (url) {
@@ -147,7 +127,6 @@ function injectImageUIIntoEntry(entryElement) {
             }
         });
 
-        // Añadir por archivo local (soporta múltiples a la vez)
         $fileInput.on('change', async function (e) {
             const files = Array.from(e.target.files || []);
             if (files.length > 0) {
@@ -162,19 +141,11 @@ function injectImageUIIntoEntry(entryElement) {
 
         renderGallery();
 
-        // Insertar después del campo de contenido
-        const contentField = $entry.find('textarea[name="content"]').closest('div');
-        if (contentField.length) {
-            contentField.after($container);
-        } else {
-            $entry.append($container);
-        }
+        // Se anexa al final del drawer de edición para tomar el ancho completo
+        $entry.append($container);
     });
 }
 
-/**
- * Observador para detectar cuándo se abre el drawer de edición
- */
 function setupMutationObserver() {
     const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
@@ -195,9 +166,6 @@ function setupMutationObserver() {
     }
 }
 
-/**
- * 1. Escuchar activación de entradas de World Info
- */
 eventSource.on(event_types.WORLD_INFO_ACTIVATED, (activatedEntries) => {
     activeImagesForTurn = [];
     if (!extension_settings[MODULE_NAME]?.enabled) return;
@@ -206,7 +174,6 @@ eventSource.on(event_types.WORLD_INFO_ACTIVATED, (activatedEntries) => {
         for (const entry of activatedEntries) {
             const imgs = getEntryImages(entry);
             if (imgs.length > 0) {
-                console.log(`[WI Images] Entrada UID ${entry.uid} activó ${imgs.length} imagen(es)`);
                 for (const imgUrl of imgs) {
                     activeImagesForTurn.push({
                         uid: entry.uid,
@@ -219,9 +186,6 @@ eventSource.on(event_types.WORLD_INFO_ACTIVATED, (activatedEntries) => {
     }
 });
 
-/**
- * 2. Inyectar todas las imágenes activadas en el prompt multimodal
- */
 eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
     if (!extension_settings[MODULE_NAME]?.enabled || activeImagesForTurn.length === 0) {
         return;
@@ -231,9 +195,6 @@ eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
         return;
     }
 
-    console.log(`[WI Images] Inyectando ${activeImagesForTurn.length} imagen(es) totales de World Info en el prompt multimodal`);
-
-    // Inyectar en el último mensaje de usuario
     for (let i = data.chat.length - 1; i >= 0; i--) {
         const msg = data.chat[i];
         if (msg.role === 'user') {
@@ -258,7 +219,6 @@ eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (data) => {
     }
 });
 
-// Inicialización
 jQuery(async () => {
     initSettings();
     setupMutationObserver();
@@ -266,6 +226,4 @@ jQuery(async () => {
     eventSource.on(event_types.WORLDINFO_UPDATED, () => {
         setupMutationObserver();
     });
-
-    console.log('[WI Images] Extensión de Múltiples Imágenes para World Info cargada con éxito.');
 });
