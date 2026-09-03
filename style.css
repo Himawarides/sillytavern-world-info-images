@@ -23,6 +23,12 @@
     gap: 4px;
 }
 
+.wi-image-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .wi-image-controls {
     display: flex;
     gap: 6px;
@@ -32,7 +38,7 @@
 
 .wi-image-controls input[type="text"] {
     flex: 1 1 auto;
-    min-width: 0; /* Evita que el input rompa el ancho en móviles */
+    min-width: 0;
     font-size: 0.85em;
     padding: 6px 8px;
     height: 36px;
@@ -59,12 +65,13 @@
 
 .wi-image-card {
     position: relative;
-    width: 70px;
-    height: 70px;
+    width: 75px;
+    height: 75px;
     border-radius: 6px;
     overflow: hidden;
     border: 1px solid var(--SmartThemeBorderColor, #666);
     background: rgba(0, 0, 0, 0.4);
+    cursor: pointer;
 }
 
 .wi-image-card img {
@@ -72,13 +79,18 @@
     height: 100%;
     object-fit: cover;
     display: block;
+    transition: transform 0.2s;
+}
+
+.wi-image-card:hover img {
+    transform: scale(1.08);
 }
 
 .wi-image-delete-btn {
     position: absolute;
     top: 2px;
     right: 2px;
-    background: rgba(0, 0, 0, 0.75);
+    background: rgba(0, 0, 0, 0.8);
     color: #ff6b6b;
     border: none;
     border-radius: 50%;
@@ -89,12 +101,48 @@
     justify-content: center;
     cursor: pointer;
     font-size: 11px;
+    z-index: 2;
 }
 
 .wi-image-count-badge {
     font-size: 0.8em;
-    opacity: 0.8;
+    opacity: 0.85;
     background: rgba(255, 255, 255, 0.1);
     padding: 2px 6px;
     border-radius: 4px;
+}
+
+.wi-image-quality-badge {
+    font-size: 0.75em;
+    color: #4cd964;
+    background: rgba(76, 217, 100, 0.15);
+    border: 1px solid rgba(76, 217, 100, 0.3);
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-weight: normal;
+}
+
+/* Modal de visor a pantalla completa */
+.wi-image-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+    padding: 20px;
+    box-sizing: border-box;
+    cursor: zoom-out;
+}
+
+.wi-image-modal-img {
+    max-width: 95%;
+    max-height: 90%;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.8);
 }
