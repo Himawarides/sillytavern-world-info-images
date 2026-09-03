@@ -1,30 +1,53 @@
 .wi-image-container {
-    margin-top: 10px;
+    width: 100% !important;
+    flex-basis: 100% !important;
+    box-sizing: border-box !important;
+    margin: 12px 0 6px 0 !important;
     padding: 10px;
-    border: 1px dashed var(--SmartThemeBorderColor, #444);
+    border: 1px dashed var(--SmartThemeBorderColor, #555);
     border-radius: 8px;
-    background: rgba(0, 0, 0, 0.15);
+    background: rgba(0, 0, 0, 0.25);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+    clear: both;
 }
 
 .wi-image-header {
-    font-size: 0.9em;
+    font-size: 0.85em;
     font-weight: bold;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
 }
 
 .wi-image-controls {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
+    width: 100%;
 }
 
 .wi-image-controls input[type="text"] {
-    flex-grow: 1;
+    flex: 1 1 auto;
+    min-width: 0; /* Evita que el input rompa el ancho en móviles */
+    font-size: 0.85em;
+    padding: 6px 8px;
+    height: 36px;
+    box-sizing: border-box;
+}
+
+.wi-image-controls .menu_button {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0 12px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
 }
 
 .wi-image-gallery {
@@ -36,12 +59,12 @@
 
 .wi-image-card {
     position: relative;
-    width: 80px;
-    height: 80px;
+    width: 70px;
+    height: 70px;
     border-radius: 6px;
     overflow: hidden;
     border: 1px solid var(--SmartThemeBorderColor, #666);
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.4);
 }
 
 .wi-image-card img {
@@ -55,29 +78,23 @@
     position: absolute;
     top: 2px;
     right: 2px;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.75);
     color: #ff6b6b;
     border: none;
     border-radius: 50%;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     font-size: 11px;
-    opacity: 0.8;
-    transition: opacity 0.2s, transform 0.2s;
-}
-
-.wi-image-delete-btn:hover {
-    opacity: 1;
-    transform: scale(1.1);
-    background: rgba(200, 0, 0, 0.9);
-    color: #fff;
 }
 
 .wi-image-count-badge {
     font-size: 0.8em;
     opacity: 0.8;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
 }
